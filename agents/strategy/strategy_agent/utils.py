@@ -37,15 +37,6 @@ def create_prompt(template: str):
     ).partial(time=datetime.now())
 
 
-def update_dialog_stack(left: list[str], right: Optional[str]) -> list[str]:
-    """Push or pop the state."""
-    if right is None:
-        return left
-    if right == "pop":
-        return left[:-1]
-    return left + [right]
-
-
 # This node will be shared for exiting all specialized assistants
 def pop_dialog_state(state: State) -> dict:
     """Pop the dialog stack and return to the main assistant.
