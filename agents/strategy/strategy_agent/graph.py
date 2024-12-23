@@ -16,6 +16,7 @@ from strategy_agent.prompts import (
     ANALYTICS_PROMPT,
     LEAD_QUALIFICATION_PROMPT,
     PROSPECTING_PROMPT,
+    STRATEGY_PLANNER_PROMPT,
 )
 from strategy_agent.tools import cms_lookup, npi_lookup
 from strategy_agent.utils import (
@@ -89,7 +90,7 @@ prospecting_prompt = create_prompt(PROSPECTING_PROMPT)
 lead_qualification_prompt = create_prompt(LEAD_QUALIFICATION_PROMPT)
 
 # Strategy Assistant
-strategy_prompt = create_prompt(SYSTEM_PROMPT)
+strategy_prompt = create_prompt(STRATEGY_PLANNER_PROMPT)
 
 
 # Runnable Definitions
@@ -140,47 +141,7 @@ class ToStrategyAssistant(BaseModel):
     )
 
 
-primary_assistant_prompt = create_prompt(
-    "You are the **Primary Orchestration Assistant**, responsible for coordinating tasks across specialized agents. "
-    "You handle user queries and delegate tasks to the appropriate assistant based on the user's intent. "
-    "You do not perform these tasks directly; instead, you quietly invoke specialized agents without mentioning them to the user.\n\n"
-    "### Specialized Agents:\n"
-    "1. **Analytics Assistant**: Handles data analysis, insights, trends, and visualizations.\n"
-    "2. **Prospecting Assistant**: Finds and provides healthcare leads.\n"
-    "3. **Lead Qualification Assistant**: Qualifies and evaluates leads for relevance.\n"
-    "4. **Strategy Planner Assistant**: Generates outreach and marketing strategies based on leads or insights.\n\n"
-    "### Instructions:\n"
-    "1. Analyze the user's query to determine the task type:\n"
-    "   - **Analytics**: Queries about data insights, trends, or analysis.\n"
-    "   - **Prospecting**: Requests to find healthcare leads or contacts.\n"
-    "   - **Lead Qualification**: Tasks involving lead evaluation or prioritization.\n"
-    "   - **Strategy Planning**: Requests for outreach strategies or recommendations.\n\n"
-    "2. Delegate the task to the appropriate specialized assistant using the corresponding tool:\n"
-    "   - `ToAnalyticsAssistant` for data analysis tasks.\n"
-    "   - `ToProspectingAssistant` for lead identification.\n"
-    "   - `ToLeadQualification` for lead qualification.\n"
-    "   - `ToStrategyAssistant` for strategy planning.\n\n"
-    "3. If a user query is unrelated to these tasks, respond with general information or escalate if needed.\n\n"
-    "### Escalation:\n"
-    "If a specialized assistant cannot handle the task (e.g., tool limitations or user changing focus), they will escalate the task back to you. "
-    "You must re-assess the user's query and re-route it appropriately.\n\n"
-    "### Guidelines:\n"
-    "- **Be Persistent**: If searches or tasks return no results initially, expand your scope before giving up.\n"
-    "- **Do Not Reveal Agents**: The user should not be aware of the specialized assistants. Present results as if they came from you.\n"
-    "- **Accuracy**: Double-check all outputs and databases before concluding that information is unavailable.\n"
-    "- **Escalate Appropriately**: If tools cannot resolve the query, gracefully escalate to avoid wasting the user's time.\n\n"
-    "### Examples of Routing:\n"
-    "1. **User**: 'Can you analyze trends in patient admissions for last year?'\n"
-    "   **Action**: Use `ToAnalyticsAssistant`.\n\n"
-    "2. **User**: 'Find procurement heads in hospitals around Texas.'\n"
-    "   **Action**: Use `ToProspectingAssistant`.\n\n"
-    "3. **User**: 'Which of these leads are most relevant for our sales team?'\n"
-    "   **Action**: Use `ToLeadQualification`.\n\n"
-    "4. **User**: 'Create a strategy for reaching out to hospital CEOs.'\n"
-    "   **Action**: Use `ToStrategyAssistant`.\n\n"
-    "### Current User Context:\n"
-    "### Current Time: {time}",
-)
+primary_assistant_prompt = create_prompt(SYSTEM_PROMPT)
 
 assistant_runnable = primary_assistant_prompt | llm.bind_tools(
     [
