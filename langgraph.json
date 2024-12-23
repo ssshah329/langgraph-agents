@@ -1,11 +1,11 @@
 {
   "dockerfile_lines": [],
   "graphs": {
-    "analyticsAgent": "./agents/analytics/analytics_agent/main.py:graph",
-    "leadQualificationAgent": "./agents/lead_qualification/lead_qualification_agent/main.py:graph",
-    "prospectingAgent": "./agents/prospecting/prospecting_agent/main.py:graph",
-    "strategyAgent": "./agents/strategy/strategy_agent/main.py:graph",
-    "strategyPlannerAgent": "./agents/strategy_planner/strategy_planner_agent/main.py:graph"
+    "analyticsAgent": "./agents/analytics/analytics_agent/graph.py:graph",
+    "leadQualificationAgent": "./agents/lead_qualification/lead_qualification_agent/graph.py:graph",
+    "prospectingAgent": "./agents/prospecting/prospecting_agent/graph.py:graph",
+    "strategyAgent": "./agents/strategy/strategy_agent/graph.py:graph",
+    "strategyPlannerAgent": "./agents/strategy_planner/strategy_planner_agent/graph.py:graph"
   },
   "env": "./.env",
   "python_version": "3.11",

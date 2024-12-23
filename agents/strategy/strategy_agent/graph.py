@@ -408,3 +408,4 @@ memory = MemorySaver()
 graph = builder.compile(
     checkpointer=memory,
 )
+graph.name = "Strategy Agent"
