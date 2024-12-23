@@ -1,154 +1,33 @@
-import os
-import getpass
 from datetime import datetime
-from typing import Annotated, Callable, Literal, Optional
+from typing import Callable
 
-import requests
 from pydantic import BaseModel, Field
-from typing_extensions import TypedDict
 
-from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
-
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import Runnable, RunnableConfig, RunnableLambda
+from langchain_core.runnables import Runnable, RunnableConfig
+from langchain_core.messages import ToolMessage
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
-from langgraph.prebuilt import ToolNode, tools_condition
-from langchain_core.messages import ToolMessage
-from langgraph.graph.message import AnyMessage, add_messages
+from langgraph.prebuilt import tools_condition
+
 from strategy_agent.prompts import (
     SYSTEM_PROMPT,
     ANALYTICS_PROMPT,
     LEAD_QUALIFICATION_PROMPT,
     PROSPECTING_PROMPT,
 )
+from strategy_agent.tools import cms_lookup, npi_lookup
+from strategy_agent.utils import (
+    create_tool_node_with_fallback,
+    create_prompt,
+    pop_dialog_state,
+)
+from strategy_agent.state import State
 
 # LLM Setup
 # llm = ChatAnthropic(model="claude-3-sonnet-20240229")
 llm = ChatOpenAI(model="gpt-4o")
-
-# Environment Configuration
-DIFY_BASE_URL = os.environ.get("DIFY_BASE_URL")
-CMS_KNOWLEDGE_BASE_ID = os.environ.get("CMS_KNOWLEDGE_BASE_ID")
-NPI_KNOWLEDGE_BASE_ID = os.environ.get("NPI_KNOWLEDGE_BASE_ID")
-DIFY_API_KEY = os.environ.get("DIFY_API_KEY")
-
-
-# Tool Definitions
-@tool
-def npi_lookup(query: str) -> str:
-    """
-    Query the Dify knowledge base for relevant documents using the /retrieve endpoint.
-    Returns the top results combined into a single string.
-    """
-    url = f"{DIFY_BASE_URL}/v1/datasets/{NPI_KNOWLEDGE_BASE_ID}/retrieve"
-    headers = {
-        "Authorization": f"Bearer {DIFY_API_KEY}",
-        "Content-Type": "application/json",
-    }
-
-    payload = {
-        "query": query,
-        "retrieval_model": {
-            "search_method": "hybrid_search",  # choose from: keyword_search, semantic_search, full_text_search, hybrid_search
-            "reranking_enable": False,  # False if reranking not needed
-            "reranking_mode": None,  # null equivalent in Python is None
-            "reranking_model": {
-                "reranking_provider_name": "",
-                "reranking_model_name": "",
-            },
-            "weights": 0.7,  # null equivalent in Python is None
-            "top_k": 3,  # number of results to return
-            "score_threshold_enabled": False,  # disable score threshold
-            "score_threshold": None,  # null equivalent
-        },
-    }
-
-    response = requests.post(url, json=payload, headers=headers)
-    response.raise_for_status()
-    data = response.json()
-
-    records = data.get("records", [])
-    contents = []
-    for record in records:
-        segment = record.get("segment", {})
-        content = segment.get("content", "")
-        if content:
-            contents.append(content.strip())
-
-    return "\n\n".join(contents)
-
-
-@tool
-def cms_lookup(query: str) -> str:
-    """
-    Query the Dify knowledge base for relevant documents using the /retrieve endpoint.
-    Returns the top results combined into a single string.
-    """
-    url = f"{DIFY_BASE_URL}/v1/datasets/{CMS_KNOWLEDGE_BASE_ID}/retrieve"
-    headers = {
-        "Authorization": f"Bearer {DIFY_API_KEY}",
-        "Content-Type": "application/json",
-    }
-
-    payload = {
-        "query": query,
-        "retrieval_model": {
-            "search_method": "hybrid_search",  # choose from: keyword_search, semantic_search, full_text_search, hybrid_search
-            "reranking_enable": False,  # False if reranking not needed
-            "reranking_mode": None,  # null equivalent in Python is None
-            "reranking_model": {
-                "reranking_provider_name": "",
-                "reranking_model_name": "",
-            },
-            "weights": 0.7,  # null equivalent in Python is None
-            "top_k": 3,  # number of results to return
-            "score_threshold_enabled": False,  # disable score threshold
-            "score_threshold": None,  # null equivalent
-        },
-    }
-
-    response = requests.post(url, json=payload, headers=headers)
-    response.raise_for_status()
-    data = response.json()
-
-    records = data.get("records", [])
-    contents = []
-    for record in records:
-        segment = record.get("segment", {})
-        content = segment.get("content", "")
-        if content:
-            contents.append(content.strip())
-
-    return "\n\n".join(contents)
-
-
-def update_dialog_stack(left: list[str], right: Optional[str]) -> list[str]:
-    """Push or pop the state."""
-    if right is None:
-        return left
-    if right == "pop":
-        return left[:-1]
-    return left + [right]
-
-
-# State and Assistant Configuration
-class State(TypedDict):
-    messages: Annotated[list[AnyMessage], add_messages]
-    dialog_state: Annotated[
-        list[
-            Literal[
-                "assistant",
-                "analytics_assistant",
-                "prospecting_assistant",
-                "lead_qualification_assistant",
-                "strategy_planner_assistant",
-            ]
-        ],
-        update_dialog_stack,
-    ]
 
 
 class Assistant:
@@ -195,21 +74,10 @@ class CompleteOrEscalate(BaseModel):
         }
 
 
-def update_dialog_state(left: list[str], right: Optional[str]) -> list[str]:
-    if right == "pop":
-        return left[:-1]
-    return left + [right]
-
+# tools
+tools = [cms_lookup, npi_lookup]
 
 # Prompts for Specialized Assistants
-def create_prompt(template: str):
-    return ChatPromptTemplate.from_messages(
-        [
-            ("system", template),
-            ("placeholder", "{messages}"),
-        ]
-    ).partial(time=datetime.now())
-
 
 # Analytics assistant
 anlaytics_prompt = create_prompt(ANALYTICS_PROMPT)
@@ -344,26 +212,6 @@ def create_entry_node(assistant_name: str, new_dialog_state: str) -> Callable:
     return entry_node
 
 
-def handle_tool_error(state) -> dict:
-    error = state.get("error")
-    tool_calls = state["messages"][-1].tool_calls
-    return {
-        "messages": [
-            ToolMessage(
-                content=f"Error: {repr(error)}\n Please fix your mistakes.",
-                tool_call_id=tc["id"],
-            )
-            for tc in tool_calls
-        ]
-    }
-
-
-def create_tool_node_with_fallback(tools: list) -> dict:
-    return ToolNode(tools).with_fallbacks(
-        [RunnableLambda(handle_tool_error)], exception_key="error"
-    )
-
-
 # Build StateGraph
 builder = StateGraph(State)
 
@@ -378,7 +226,7 @@ builder.add_node("analytics_assistant", Assistant(analytics_runnable))
 builder.add_edge("enter_analytics_assistant", "analytics_assistant")
 builder.add_node(
     "analytics_tools",
-    create_tool_node_with_fallback([cms_lookup, npi_lookup]),
+    create_tool_node_with_fallback(tools),
 )
 
 
@@ -403,28 +251,6 @@ builder.add_conditional_edges(
 )
 
 
-# This node will be shared for exiting all specialized assistants
-def pop_dialog_state(state: State) -> dict:
-    """Pop the dialog stack and return to the main assistant.
-
-    This lets the full graph explicitly track the dialog flow and delegate control
-    to specific sub-graphs.
-    """
-    messages = []
-    if state["messages"][-1].tool_calls:
-        # Note: Doesn't currently handle the edge case where the llm performs parallel tool calls
-        messages.append(
-            ToolMessage(
-                content="Resuming dialog with the host assistant. Please reflect on the past conversation and assist the user as needed.",
-                tool_call_id=state["messages"][-1].tool_calls[0]["id"],
-            )
-        )
-    return {
-        "dialog_state": "pop",
-        "messages": messages,
-    }
-
-
 builder.add_node("leave_skill", pop_dialog_state)
 builder.add_edge("leave_skill", "primary_assistant")
 
@@ -438,7 +264,7 @@ builder.add_node("prospecting_assistant", Assistant(prospecting_runnable))
 builder.add_edge("enter_prospecting_assistant", "prospecting_assistant")
 builder.add_node(
     "prospecting_tools",
-    create_tool_node_with_fallback([cms_lookup, npi_lookup]),
+    create_tool_node_with_fallback(tools),
 )
 
 
@@ -472,7 +298,7 @@ builder.add_node("lead_qualification_assistant", Assistant(lead_qualification_ru
 builder.add_edge("enter_lead_qualification", "lead_qualification_assistant")
 builder.add_node(
     "lead_qualification_tools",
-    create_tool_node_with_fallback([cms_lookup, npi_lookup]),
+    create_tool_node_with_fallback(tools),
 )
 
 
